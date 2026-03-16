@@ -14,8 +14,6 @@ export default function Dashboard() {
   const DECAY = 0.85
   const CRIT_CHANCE = 0.1
   const CRIT_MULTIPLIER = 1.5
-
-  const TARGET_AVG_UNITS = 4
   const PRODUCTIVITY_BONUS = 1.2
 
   const [patients, setPatients] = useState<string[]>([])
@@ -35,61 +33,47 @@ export default function Dashboard() {
   const [totalXP, setTotalXP] = useState(0)
   const [xpPop, setXpPop] = useState("")
 
+  const [targetUnits, setTargetUnits] = useState(4) // clinician adjustable, min 3.5
+
   function addPatient() {
     if (!newPatient.trim()) return
     if (patients.includes(newPatient)) return
 
     setPatients([...patients, newPatient])
-
     setPatientUnits({ ...patientUnits, [newPatient]: 0 })
     setPatientXP({ ...patientXP, [newPatient]: 0 })
-
     setNewPatient("")
   }
 
   function deletePatient(name: string) {
-
     const newPatients = patients.filter((p) => p !== name)
-
     const xpToRemove = patientXP[name] || 0
-
     const newUnits = { ...patientUnits }
     const newXP = { ...patientXP }
-
     delete newUnits[name]
     delete newXP[name]
-
     setPatients(newPatients)
     setPatientUnits(newUnits)
     setPatientXP(newXP)
-
     setTotalXP(totalXP - xpToRemove)
-
-    if (selectedPatient === name) {
-      setSelectedPatient("")
-    }
+    if (selectedPatient === name) setSelectedPatient("")
   }
 
   function logVisit() {
-
     if (!selectedPatient) return
 
     let gainedXP = 0
     let totalUnits = 0
 
     Object.entries(units).forEach(([type, value]) => {
-
       const num = Number(value)
-
       for (let i = 0; i < num; i++) {
         gainedXP += XP_VALUES[type] * Math.pow(DECAY, i)
       }
-
       totalUnits += num
     })
 
     const isCrit = Math.random() < CRIT_CHANCE
-
     if (isCrit) {
       gainedXP *= CRIT_MULTIPLIER
       setXpPop(`🔥 CRITICAL +${gainedXP.toFixed(1)} XP`)
@@ -104,8 +88,7 @@ export default function Dashboard() {
     const projectedAvg = projectedUnits / patients.length
 
     let finalXP = gainedXP
-
-    if (projectedAvg >= TARGET_AVG_UNITS) {
+    if (projectedAvg >= targetUnits) {
       finalXP *= PRODUCTIVITY_BONUS
     }
 
@@ -121,7 +104,6 @@ export default function Dashboard() {
 
     setPatientXP(newPatientXP)
     setPatientUnits(newPatientUnits)
-
     setTotalXP(totalXP + finalXP)
 
     setUnits({
@@ -133,16 +115,12 @@ export default function Dashboard() {
   }
 
   const totalPatients = patients.length
-
   const totalUnitsAll = Object.values(patientUnits).reduce((a, b) => a + b, 0)
-
   const avgUnits =
     totalPatients > 0 ? (totalUnitsAll / totalPatients).toFixed(2) : "0"
 
   return (
-
     <div className="p-8 space-y-8 text-black bg-gray-50 min-h-screen">
-
       <h1 className="text-3xl font-bold">PT XP Dashboard</h1>
 
       {xpPop && (
@@ -152,7 +130,6 @@ export default function Dashboard() {
       )}
 
       <div className="grid grid-cols-3 gap-4">
-
         <div className="p-4 bg-white rounded shadow">
           <h2 className="font-semibold">Total XP</h2>
           <p className="text-2xl">{totalXP.toFixed(1)}</p>
@@ -166,133 +143,87 @@ export default function Dashboard() {
         <div className="p-4 bg-white rounded shadow">
           <h2 className="font-semibold">Avg Units / Patient</h2>
           <p className="text-2xl">{avgUnits}</p>
-
-          {Number(avgUnits) >= TARGET_AVG_UNITS ? (
-            <p className="text-green-600 font-semibold">
-              🔥 Productivity Bonus Active
-            </p>
+          {Number(avgUnits) >= targetUnits ? (
+            <p className="text-green-600 font-semibold">🔥 Productivity Bonus Active</p>
           ) : (
-            <p className="text-yellow-600 font-semibold">
-              ⚠ Below Target
-            </p>
+            <p className="text-yellow-600 font-semibold">⚠ Below Target</p>
           )}
-
         </div>
-
       </div>
 
       <div className="space-y-2">
+        <h2 className="text-xl font-semibold">Set Target Units / Patient</h2>
+        <input
+          type="number"
+          min={3.5}
+          step={0.1}
+          value={targetUnits}
+          onChange={(e) => setTargetUnits(Math.max(3.5, Number(e.target.value)))}
+          className="border p-2 rounded text-black w-20"
+        />
+        <p className="text-sm text-gray-600">Minimum 3.5 units</p>
+      </div>
 
+      <div className="space-y-2">
         <h2 className="text-xl font-semibold">Add Patient</h2>
-
         <input
           className="border p-2 rounded bg-white text-black"
           placeholder="Patient name"
           value={newPatient}
           onChange={(e) => setNewPatient(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") addPatient()
-          }}
+          onKeyDown={(e) => { if (e.key === "Enter") addPatient() }}
         />
-
-        <button
-          className="bg-blue-500 text-white px-4 py-2 rounded ml-2"
-          onClick={addPatient}
-        >
-          Add
-        </button>
-
+        <button className="bg-blue-500 text-white px-4 py-2 rounded ml-2" onClick={addPatient}>Add</button>
       </div>
 
       <div className="space-y-2">
-
         <h2 className="text-xl font-semibold">Patient Bank</h2>
-
         <div className="grid grid-cols-3 gap-2">
-
           {patients.map((p) => (
             <div
               key={p}
-              className={`p-3 rounded border cursor-pointer flex justify-between items-center ${
-                selectedPatient === p ? "bg-blue-200" : "bg-white"
-              }`}
+              className={`p-3 rounded border cursor-pointer flex justify-between items-center ${selectedPatient === p ? "bg-blue-200" : "bg-white"}`}
               onClick={() => setSelectedPatient(p)}
             >
-
               <span>{p}</span>
-
               <button
                 className="text-red-500 font-bold"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  deletePatient(p)
-                }}
+                onClick={(e) => { e.stopPropagation(); deletePatient(p) }}
               >
                 X
               </button>
-
             </div>
           ))}
-
         </div>
-
       </div>
 
       <div className="space-y-2">
-
         <h2 className="text-xl font-semibold">Log Units</h2>
-
         <div className="grid grid-cols-4 gap-2">
-
           {Object.keys(units).map((type) => (
             <input
               key={type}
               className="border p-2 rounded bg-white text-black"
               placeholder={type}
               value={units[type as keyof typeof units]}
-              onChange={(e) =>
-                setUnits({
-                  ...units,
-                  [type]: e.target.value,
-                })
-              }
-              onKeyDown={(e) => {
-                if (e.key === "Enter") logVisit()
-              }}
+              onChange={(e) => setUnits({ ...units, [type]: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") logVisit() }}
             />
           ))}
-
         </div>
-
-        <button
-          className="bg-green-500 text-white px-4 py-2 rounded"
-          onClick={logVisit}
-        >
-          Log Visit
-        </button>
-
+        <button className="bg-green-500 text-white px-4 py-2 rounded" onClick={logVisit}>Log Visit</button>
       </div>
 
       <div className="space-y-2">
-
         <h2 className="text-xl font-semibold">Patient Stats</h2>
-
         {patients.map((p) => (
-
           <div key={p} className="border p-3 rounded bg-white shadow">
-
             <p className="font-semibold">{p}</p>
-
             <p>Units: {patientUnits[p] || 0}</p>
-
             <p>XP: {(patientXP[p] || 0).toFixed(1)}</p>
-
           </div>
-
         ))}
-
       </div>
-
     </div>
   )
 }
