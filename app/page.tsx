@@ -1,13 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 export default function Dashboard() {
 
   const XP_VALUES: Record<string, number> = {
     TherEx: 10,
-    TherAct: 14,
-    Neuro: 16,
+    TherAct: 16,
+    Neuro: 14,
     Manual: 8,
   }
 
@@ -15,6 +15,14 @@ export default function Dashboard() {
   const CRIT_CHANCE = 0.1
   const CRIT_MULTIPLIER = 1.5
   const PRODUCTIVITY_BONUS = 1.2
+
+  const LEVELS = [
+    { title: "Novice", threshold: 0 },
+    { title: "Apprentice", threshold: 100 },
+    { title: "Skilled", threshold: 300 },
+    { title: "Expert", threshold: 600 },
+    { title: "Master", threshold: 1000 },
+  ]
 
   const [patients, setPatients] = useState<string[]>([])
   const [newPatient, setNewPatient] = useState("")
@@ -27,20 +35,26 @@ export default function Dashboard() {
     Manual: "",
   })
 
-  const [patientUnits, setPatientUnits] = useState<Record<string, number>>({})
+  const [patientUnits, setPatientUnits] = useState<Record<string, Record<string, number>>>({})
   const [patientXP, setPatientXP] = useState<Record<string, number>>({})
-
   const [totalXP, setTotalXP] = useState(0)
   const [xpPop, setXpPop] = useState("")
 
-  const [targetUnits, setTargetUnits] = useState(4) // clinician adjustable, min 3.5
+  const [targetUnits, setTargetUnits] = useState(4) // minimum 3.5
+  const [streak, setStreak] = useState(0)
+  const [lastStreakDay, setLastStreakDay] = useState<number | null>(null)
+
+  // calculate level based on total XP
+  const currentLevel = LEVELS.slice().reverse().find(l => totalXP >= l.threshold)?.title || "Novice"
+
+  const today = new Date().setHours(0, 0, 0, 0)
 
   function addPatient() {
     if (!newPatient.trim()) return
     if (patients.includes(newPatient)) return
 
     setPatients([...patients, newPatient])
-    setPatientUnits({ ...patientUnits, [newPatient]: 0 })
+    setPatientUnits({ ...patientUnits, [newPatient]: { TherEx:0, TherAct:0, Neuro:0, Manual:0 } })
     setPatientXP({ ...patientXP, [newPatient]: 0 })
     setNewPatient("")
   }
@@ -48,13 +62,13 @@ export default function Dashboard() {
   function deletePatient(name: string) {
     const newPatients = patients.filter((p) => p !== name)
     const xpToRemove = patientXP[name] || 0
-    const newUnits = { ...patientUnits }
-    const newXP = { ...patientXP }
-    delete newUnits[name]
-    delete newXP[name]
+    const newPatientUnits = { ...patientUnits }
+    const newPatientXP = { ...patientXP }
+    delete newPatientUnits[name]
+    delete newPatientXP[name]
     setPatients(newPatients)
-    setPatientUnits(newUnits)
-    setPatientXP(newXP)
+    setPatientUnits(newPatientUnits)
+    setPatientXP(newPatientXP)
     setTotalXP(totalXP - xpToRemove)
     if (selectedPatient === name) setSelectedPatient("")
   }
@@ -63,64 +77,60 @@ export default function Dashboard() {
     if (!selectedPatient) return
 
     let gainedXP = 0
-    let totalUnits = 0
+    let totalUnitsAdded = 0
+
+    const newPatientUnits = { ...patientUnits[selectedPatient] }
 
     Object.entries(units).forEach(([type, value]) => {
       const num = Number(value)
+      const currentCount = newPatientUnits[type] || 0
       for (let i = 0; i < num; i++) {
-        gainedXP += XP_VALUES[type] * Math.pow(DECAY, i)
+        gainedXP += XP_VALUES[type] * Math.pow(DECAY, currentCount + i)
       }
-      totalUnits += num
+      newPatientUnits[type] = currentCount + num
+      totalUnitsAdded += num
     })
 
     const isCrit = Math.random() < CRIT_CHANCE
-    if (isCrit) {
-      gainedXP *= CRIT_MULTIPLIER
-      setXpPop(`🔥 CRITICAL +${gainedXP.toFixed(1)} XP`)
-    } else {
-      setXpPop(`+${gainedXP.toFixed(1)} XP`)
+    if (isCrit) gainedXP *= CRIT_MULTIPLIER
+
+    const newPatientXPValue = (patientXP[selectedPatient] || 0) + gainedXP
+
+    // update patient states
+    setPatientUnits({ ...patientUnits, [selectedPatient]: newPatientUnits })
+    setPatientXP({ ...patientXP, [selectedPatient]: newPatientXPValue })
+    setTotalXP(totalXP + gainedXP)
+
+    // reset units input
+    setUnits({ TherEx:"", TherAct:"", Neuro:"", Manual:"" })
+
+    // projected average for productivity bonus
+    const newPatientUnitsAll = { ...patientUnits, [selectedPatient]: newPatientUnits }
+    const totalUnitsSum = Object.values(newPatientUnitsAll).reduce(
+      (sum, u) => sum + Object.values(u).reduce((a,b)=>a+b,0), 0
+    )
+    const avgUnits = patients.length ? totalUnitsSum / patients.length : 0
+    if (avgUnits >= targetUnits) gainedXP *= PRODUCTIVITY_BONUS
+
+    setXpPop(`${isCrit ? "🔥 CRIT " : "+"}${gainedXP.toFixed(1)} XP`)
+    setTimeout(()=>setXpPop(""),1200)
+
+    // update streak only if avgUnits >= targetUnits
+    if (avgUnits >= targetUnits) {
+      if (lastStreakDay === today - 86400000) setStreak(streak + 1)
+      else if (lastStreakDay !== today) setStreak(1)
+      setLastStreakDay(today)
     }
-
-    setTimeout(() => setXpPop(""), 1200)
-
-    const totalUnitsAll = Object.values(patientUnits).reduce((a, b) => a + b, 0)
-    const projectedUnits = totalUnitsAll + totalUnits
-    const projectedAvg = projectedUnits / patients.length
-
-    let finalXP = gainedXP
-    if (projectedAvg >= targetUnits) {
-      finalXP *= PRODUCTIVITY_BONUS
-    }
-
-    const newPatientXP = {
-      ...patientXP,
-      [selectedPatient]: (patientXP[selectedPatient] || 0) + finalXP,
-    }
-
-    const newPatientUnits = {
-      ...patientUnits,
-      [selectedPatient]: (patientUnits[selectedPatient] || 0) + totalUnits,
-    }
-
-    setPatientXP(newPatientXP)
-    setPatientUnits(newPatientUnits)
-    setTotalXP(totalXP + finalXP)
-
-    setUnits({
-      TherEx: "",
-      TherAct: "",
-      Neuro: "",
-      Manual: "",
-    })
   }
 
   const totalPatients = patients.length
-  const totalUnitsAll = Object.values(patientUnits).reduce((a, b) => a + b, 0)
-  const avgUnits =
-    totalPatients > 0 ? (totalUnitsAll / totalPatients).toFixed(2) : "0"
+  const totalUnitsAll = Object.values(patientUnits).reduce(
+    (sum, u) => sum + Object.values(u).reduce((a,b)=>a+b,0), 0
+  , 0)
+  const avgUnits = totalPatients ? (totalUnitsAll / totalPatients).toFixed(2) : "0"
 
   return (
-    <div className="p-8 space-y-8 text-black bg-gray-50 min-h-screen">
+    <div className="p-8 space-y-8 bg-gray-50 min-h-screen text-black">
       <h1 className="text-3xl font-bold">PT XP Dashboard</h1>
 
       {xpPop && (
@@ -133,6 +143,7 @@ export default function Dashboard() {
         <div className="p-4 bg-white rounded shadow">
           <h2 className="font-semibold">Total XP</h2>
           <p className="text-2xl">{totalXP.toFixed(1)}</p>
+          <p className="text-sm">Level: {currentLevel}</p>
         </div>
 
         <div className="p-4 bg-white rounded shadow">
@@ -158,7 +169,7 @@ export default function Dashboard() {
           min={3.5}
           step={0.1}
           value={targetUnits}
-          onChange={(e) => setTargetUnits(Math.max(3.5, Number(e.target.value)))}
+          onChange={(e)=>setTargetUnits(Math.max(3.5, Number(e.target.value)))}
           className="border p-2 rounded text-black w-20"
         />
         <p className="text-sm text-gray-600">Minimum 3.5 units</p>
@@ -170,8 +181,8 @@ export default function Dashboard() {
           className="border p-2 rounded bg-white text-black"
           placeholder="Patient name"
           value={newPatient}
-          onChange={(e) => setNewPatient(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") addPatient() }}
+          onChange={(e)=>setNewPatient(e.target.value)}
+          onKeyDown={(e)=>{ if(e.key==="Enter") addPatient() }}
         />
         <button className="bg-blue-500 text-white px-4 py-2 rounded ml-2" onClick={addPatient}>Add</button>
       </div>
@@ -179,19 +190,11 @@ export default function Dashboard() {
       <div className="space-y-2">
         <h2 className="text-xl font-semibold">Patient Bank</h2>
         <div className="grid grid-cols-3 gap-2">
-          {patients.map((p) => (
-            <div
-              key={p}
-              className={`p-3 rounded border cursor-pointer flex justify-between items-center ${selectedPatient === p ? "bg-blue-200" : "bg-white"}`}
-              onClick={() => setSelectedPatient(p)}
-            >
+          {patients.map((p)=>(
+            <div key={p} className={`p-3 rounded border cursor-pointer flex justify-between items-center ${selectedPatient===p?"bg-blue-200":"bg-white"}`} 
+                 onClick={()=>setSelectedPatient(p)}>
               <span>{p}</span>
-              <button
-                className="text-red-500 font-bold"
-                onClick={(e) => { e.stopPropagation(); deletePatient(p) }}
-              >
-                X
-              </button>
+              <button className="text-red-500 font-bold" onClick={(e)=>{e.stopPropagation();deletePatient(p)}}>X</button>
             </div>
           ))}
         </div>
@@ -200,14 +203,14 @@ export default function Dashboard() {
       <div className="space-y-2">
         <h2 className="text-xl font-semibold">Log Units</h2>
         <div className="grid grid-cols-4 gap-2">
-          {Object.keys(units).map((type) => (
+          {Object.keys(units).map((type)=>(
             <input
               key={type}
               className="border p-2 rounded bg-white text-black"
               placeholder={type}
               value={units[type as keyof typeof units]}
-              onChange={(e) => setUnits({ ...units, [type]: e.target.value })}
-              onKeyDown={(e) => { if (e.key === "Enter") logVisit() }}
+              onChange={(e)=>setUnits({...units, [type]: e.target.value})}
+              onKeyDown={(e)=>{ if(e.key==="Enter") logVisit() }}
             />
           ))}
         </div>
@@ -216,13 +219,17 @@ export default function Dashboard() {
 
       <div className="space-y-2">
         <h2 className="text-xl font-semibold">Patient Stats</h2>
-        {patients.map((p) => (
+        {patients.map((p)=>(
           <div key={p} className="border p-3 rounded bg-white shadow">
             <p className="font-semibold">{p}</p>
-            <p>Units: {patientUnits[p] || 0}</p>
+            <p>Units: {Object.values(patientUnits[p] || {}).reduce((a,b)=>a+b,0)}</p>
             <p>XP: {(patientXP[p] || 0).toFixed(1)}</p>
           </div>
         ))}
+      </div>
+
+      <div className="p-4 bg-white rounded shadow">
+        <p>🔥 Current Streak (meeting target): {streak} day(s)</p>
       </div>
     </div>
   )
